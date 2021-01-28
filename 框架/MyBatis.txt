@@ -1,0 +1,221 @@
+Mybatis的特点：
+	1.接口式编程 
+		原生：     Dao     ====>  DaoImpl
+		MyBatis:   Mapper ====>  xxMapper.xml
+	2.SqlSession代表和数据库的一次会话，用完必须关闭
+	3.SqlSession和connection一样都是非线程安全，每次使用都应该去获取新的对象
+	4.mapper接口没有实现类，但是MyBatis会为这个接口生成一个代理对象（将接口和xml绑定）
+		EmployeeMapper mapper = openSession.getMapper(EmployeeMapper.class);
+	5.两个重要的配置文件：
+		MyBatis的全局配置文件，包含数据库连接池问题、事务管理器问题..系统运行环境信息
+		sql映射文件：保存了每一个sql语句的映射信息，将sql抽取出来。
+
+	单个参数：MyBatis不会做特殊处理
+		#{参数名}：取出参数值
+	多个参数：
+		报错：org.apache.ibatis.binding.BindingException: Parameter 'id' not found. Available parameters are [0, 1, param1, param2]
+		多个参数会被封装成一个map.
+			key：param1...paramN
+			value：传入的参数值
+			示例：select * from Employee where id = #{param1} and lastname = #{param2}
+
+			操作：
+				方法：public Employee getEmpByIdAndLastName(Integer id, String lastName)
+				取值：#{id}，#{lastName}
+	命名参数：明确指定封装参数时map的key：@Param("id")
+		多个参数会被封装成一个map
+			key：使用@Param注解指定的值
+			value：参数值
+		#{指定的key}：取出对应的参数值
+			示例：public Employee getEmpByIdAndName(@Param("id")Integer id, @Param("lastname")String lastname);
+
+	POJO：如果多个参数正好是业务逻辑的数据模型，就可以直接传入pojo对象
+		#{属性名}，取出传入的pojo的属性值
+
+	Map：如果多个参数不是业务逻辑中的数据，没有对应的pojo，不经常使用，可以直接传入map中
+		#{key}：取出map中的属性值
+
+	如果多个属性不是业务逻辑中的数据，但是经常使用，推荐编写TO（Transfer Object）数据传输对象
+		比如： Page{
+			int start;
+			int size;
+		}
+
+
+	问题：
+	public Employee getEmp(@Param("id")Integer id, String lastname);
+		取值：id => #{id/param1}       lastname => #{param2}
+
+	public Employee getEmp(Integer id, Employee emp);
+		取值：id => #{param1}		   lastname => #{param2.lastname}
+
+	###特别注意，如果是Collection(List, Set)类型或者是数组，也会特殊处理，也是把传入的list或者数组封装在map中
+		key，Collection（collection），如果是List还可以使用list  数组（array）
+	public Employee getEmpById(List<Integer> ids);
+		取值：取出第一个id的值 => #{list[0]} 
+	
+
+	总结：参数多时会封装map，为了不混乱，可以使用@Param来指定封装时使用的key
+		#{key}就可以取出map中的值
+
+	获取参数值
+		#{}：可以获取map中的值或者pojo对象属性的值；
+		${}：可以获取map中的值或者pojo对象属性的值；
+			区别：
+				select * from Employee where id = ${id} and lastname = #{lastname}
+				#{}：是以预编译的形式，将参数设置到sql语句中，PreparedStatement；防止sql注入
+				${}：取出的值直接拼装在sql语句中，会有安全问题
+					大多情况下，使用参数应该使用#{}
+					使用${}取值的情况：原生sql不支持占位符的地方 => 比如分表、排序
+					select * from ${year}_salary where xxx   按年份进行分表拆分
+					select * from tb1_employee order by ${f_name} ${order}
+
+		#{}更丰富的用法：
+			规定参数的一些规则：
+				javaType（对应Java的数据类型）、jdbcType（对应数据库的数据类型）、mode(存储过程)、numericScale(保留几位小数)
+				resultMap、typeHandler、jdbcTypeName、expression
+
+			jdbcType通常在某种特定条件下被设置：
+				在我们的数据为null的时候，有些数据库可能不能识别MyBatis对null的默认处理，比如Oracle（报错）
+				JdbcType OTHER：无效的类型，因为mybatis对所有的null都映射的是原生Jdbc的OTHER类型，oracle不能正常识别;
+				由于全局配置中，jdbcTypeForNull=OTHER，oracle不支持
+					1.#{email, jdbcType = NULL};
+					2.jdbcTypeForNull = NULL;	<setting name="jdbcTypeForNull" value="NULL">
+			
+		数据库中的表列名和JavaBean的属性名不一致的情况下：
+			1.为数据库中的表列名起别名；
+			2.开启驼峰命名法；
+			3.使用resultMap自定义结果集的命名规则
+
+		MyBatis中有两个内置参数：
+			_databaseId：数据库id（根据别名判断）
+				<if test = "_databaseId == 'mysql'">
+					select * from Employee
+				</if>
+			_parameter：参数
+				select * from Employee
+				<if test="_parameter != null">
+					where lastname = #{lastname}
+				</if>
+		bind标签：bind标签可以使用OGNL表达式创建一个变量并将其绑定到上下文中。 
+			bind标签的两个属性都是不选项，name为绑定到上下文的变量名，value为OGNL表达式
+			用法：
+				<!-- 将OGNL表达式的值绑定到变量中，方便后来引用这个变量的值 -->
+				<bind name="last_name" value="'%' + lastname + '%'"/>
+				注意：必须在方法上标注@Param标签，否则报错
+				public List<Employee> getEmployeeByName(@Param("lastname")String lastname);
+
+		sql：抽取可重用的sql
+			<!-- 
+				抽取可重用的sql：
+				1.sql抽取，将经常将要查询的列名，或者插入的列名抽取出来方便引用
+				2.include来引用已经抽取的sql
+				3.include还可以自定义一些property，sql标签内部就能使用自定义的属性，#{不能使用这种方式}
+			-->
+			<sql id="selectParam">
+				select * from Employee
+			</sql>
+			<!-- 引用外部定义的sql -->
+			include refid="selectParam"/>
+			练习：
+				<sql id="empAndDeptColumns">
+					e.emp_id, e.emp_name, e.email, e.gender, e.d_id, d.dept_name 
+				</sql>
+
+		<trim prefix="values(" suffix=")" suffixOverrides=",">
+    		<if test="empId != null">
+    			#{empId}
+    		</if>
+    		<if test="empName != null">
+    			#{empName}
+    		</if>
+    		<if test="gender != null">
+    			#{gender}
+    		</if>
+    		<if test="email != null">
+    			#{email}
+    		</if>
+    		<if test="dId != null">
+    			#{dId}
+    		</if>
+    	</trim>
+
+
+	缓存：
+		优点：可以极大的提升查询效率。
+		MyBatis中默认定义了两级缓存。
+		 	两级缓存：
+	  	1.一级缓存（本地缓存）：SqlSession级别的缓存，一级缓存是一直开启的
+	 		与数据库同一次会话期间查询到的数据会放在本地缓存中。
+	 		以后如果需要获取相同的数据，直接从缓存中拿，没必要再去访问数据库
+	 		一级缓存失效情况（没有使用当前一级缓存的情况，效果就是，还需要向数据库发出查询）
+	 		1.SqlSession不同
+	 		2.SqlSession相同，查询条件不同（当前一级缓存中还没有这个数据）
+	 		3.SqlSession相同，两次查询之间增加了增删改操作（这次增删改可能对当前数据有影响）
+	 		4.SqlSession相同，手动清除一级缓存
+
+//			1.SqlSesison不同
+//			EmployeeMapper mapper2 = openSession2.getMapper(EmployeeMapper.class);
+//			Employee employee3 = mapper2.getEmpById(1);
+//			System.out.println(employee3);
+//			System.out.println(employee1 == employee3);
+			
+//			2.SqlSession相同，查询条件不同
+//			Employee employee4 = mapper.getEmpById(4);
+//			System.out.println(employee4);
+			
+//			3.SqlSession相同，两次查询之间增加了增删改操作
+//			Employee e = new Employee(10, "zs", "1", "111@qq.com", null);
+//			mapper.addEmployee(e);
+			
+//			4.SqlSession相同，手动清除一级缓存
+//			openSession1.clearCache();
+//			第一次查询之后，会将结果放在缓存中，再次查询就直接从缓存中取出数据，因此两者为同一个对象
+
+	  	2.二级缓存（全局缓存）：基于namespace级别的缓存，一个namespace对应一个二级缓存；
+	  		工作机制:
+	  			1.一个会话，查询一条数据，这个数据就会被放在当前会话的一级缓存中；
+	  			2.如果会话关闭，一级缓存中的数据就会被保存在二级缓存中，新的会话查询信息，可以根据二级缓存中的内容
+	  			3.SqlSession ==> EmployeeMapper ==> Employee
+	  							 DepartmentMapper ==> Department
+	  			    不同的namespace查出的数据会放在自己对应的缓存（map）中
+	  		
+	  		效果：
+	  			查出的数据都会默认先放在一级缓存中；
+	  			只有会话提交或者关闭之后，一级缓存中的数据才会转移到二级缓存中		
+	  
+	  		使用：
+	  			1.开启全局二级缓存配置；<setting name="cacheEnabled" value="true"/>
+	  			2.去mapper.xml中配置使用二级缓存；<cache></cache>
+	  				<!--
+						 eviction：缓存的回收策略
+						 	LRU：最近最少使用的，移除最长时间不被使用的对象；
+						 	FIFO：先进先出，按对象进入缓存的顺序来移除它们；
+						 	SOFT：软引用，移除基于垃圾回收器状态和软引用规则的对象；
+						 	WEAK：弱引用，更积极地移除基于垃圾回收器状态和弱引用规则的对象
+						 	默认是LRU
+						 flushInterval：缓存刷新间隔
+						 	缓存多长时间清空一次，默认不清空，单位为毫秒
+						 readOnly：是否只读
+						 	true：只读 MyBatis认为所有从缓存中获取数据的操作都是只读操作，不会修改数据。
+						 			 MyBatis为了加快获取速度，直接就会将数据在缓存中的引用交给用户，此方法不安全但速度快。
+						 	false：非只读  MyBatis觉得获取的数据可能会被修改
+						 			    MyBatis会利用序列化&反序列化的技术克隆一份新的数据交给用户，此方法安全但速度慢。
+						 size：缓存存放多少元素
+						 type=""：指定自定义缓存的全类名，实现Cache接口即可。
+					-->
+					<cache eviction="FIFO" flushInterval="60000" readOnly="true" size="1024"></cache>
+
+	  			3.由于二级缓存中使用了序列化和反序列化，因此pojo类需要实现序列化接口 implements Serializable
+	 			注意：二级缓存在同一个SqlSessionFactory中才会生效，如果在不同SqlSesseionFactory中，则不会生效
+	  
+	  		和缓存有关的设置/属性：
+	  			1.cacheEnabled = true（开启缓存），false（关闭缓存） 仅开启/关闭二级缓存，不会开启/关闭一级缓存
+	 			2.每个select标签都有useCache="true"，false：不使用缓存（一级缓存依然使用，二级缓存不使用）
+	  			3.每个增删改标签都有flushCache="true"
+	  				增删改执行完成后就会清除缓存（所有缓存，一二级缓存，不仅是针对操作的数据）
+	  				测试：flushCache = "true"，一级缓存就清空了，二级也会被清空
+	  				查询默认为false，增删改默认为true
+	  			4.sqlSession.clearCache()：只是清除当前session的一级缓存，不清空二级缓存
+	  			5.localCacheScope：本地缓存作用域（一级缓存SESSION），当前会话的所有数据保存在会话缓存中
+	  				STATEMENT：可以禁用一级缓存

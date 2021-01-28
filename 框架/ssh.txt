@@ -1,0 +1,25 @@
+事务规则：
+tx:method name="get*" rad-only="true"
+方法名前缀为get方法的设置为只读权限，默认为独立事务，即basicdataSource的事务规则，一个方法为一个事务。
+<tx:method name="update*" propagation="REQUIRED" />
+方法名前缀为update的方法，如果没有开启事务，开启一个可读可写的事务，如果已经开启，则继续执行。
+REQUIRED-NEW：每调用一个方法，开启一个事务
+PROPAGATION_REQUIRED：如果当前没有事务，就新建一个事务，如果已经存在一个事务中，加入到这个事务中。这是最常见的选择。
+PROPAGATION_SUPPORTS：支持当前事务，如果当前没有事务，就以非事务方式执行。
+PROPAGATION_MANDATORY：支持当前事务，如果当前没有事务，就抛出异常。
+PROPAGATION_REQUIRES_NEW：新建事务，如果当前存在事务，把当前事务挂起。
+PROPAGATION_NOT_SUPPORTED：以非事务方式执行操作，如果当前存在事务，就把当前事务挂起。
+PROPAGATION_NEVER：以非事务方式执行，如果当前存在事务，则抛出异常。 
+
+<aop:config>
+	*：所有返回值类型  com.yaoyue.service..*.：service子包下的所有类
+	<aop:pointcut expression="execution(* com.yaoyue.service..*.*(..))" id="servicePointer" />
+	当满足切入点位置时，调用上面事务规则，决定开启什么类型的事务
+</aop:config>
+
+如果想让两个事务同时执行成功，否则同时失败。
+方法：在业务逻辑层中，用一个方法调用另一个方法。
+原理：该方法满足事务规则，开启一个可读可写的事务
+在该方法中调用另一个方法，满足切入点所在位置，但不满足事务规则，因此两个方法被放到同一个事务中，同时成功，同时失败。
+
+在对dao、service层进行注入时，应在类中定义接口引用，在xml文件中使用接口实现呢类注入

@@ -1,0 +1,235 @@
+普通的servlet流程：
+	请求 -> url-pattern -> 交给对应的servlet去处理
+使用SpringMVC，而不是普通的servlet，如何告知程序？
+	配置一个SpringMVC自带的servlet
+
+通过以下配置，拦截所有请求，交给SpringMVC处理
+	 <servlet>
+  		<servlet-name>dispatchServlet</servlet-name>
+  		<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+  		<init-param>
+  			<param-name>contextConfigLocation</param-name>
+  			<param-value>classpath:springmvc.xml</param-value>
+  		</init-param>
+  	</servlet>
+  
+  	<servlet-mapping>
+  		<servlet-name>dispatchServlet</servlet-name>
+  		<url-pattern>/</url-pattern>
+  	</servlet-mapping>
+  	其中：
+  		<url-pattern>/</url-pattern> 
+  		/：拦截一切请求，不是/*
+  		/user：拦截以/user开头的请求
+  		/user/abc.do：只拦截该请求
+  		.action：只拦截.action结尾的请求
+  	项目中同时兼容SpringMVC和Servlet：
+  		<servlet-mapping>
+  			<servlet-name>dispatchServlet</servlet-name>
+  			<url-pattern>.action</url-pattern>
+  		</servlet-mapping>
+
+  	通过
+  		<init-param>
+  			<param-name>contextConfigLocation</param-name>
+  			<param-value>classpath:springmvc.xml</param-value>
+  		</init-param>
+  	指定SpringMVC配置文件的路径，如果套省略，必须放到默认路径/WEB-INFO/<servlet-name>-servlet.xml
+
+工作流程：
+  	前端页面发出request请求，被Controller层拦截，进行处理之后，将处理结果加上前缀和后缀，之后返回到前台
+
+ 映射是去匹配RequestMapping注解，可以和方法名、类名不一致
+ 页面跳转时默认使用了请求转发的跳转方式
+
+ 通过method指定请求方式（get post delete put）
+ 	@RequestMapping(value = "welcome", method = RequestMethod.POST) //修改为拦截post请求之后报错的原因：默认为get请求，修改为POST之后，无法拦截
+ 	get：查
+ 	post：增
+ 	delete：删
+ 	put：改
+ 	普通的浏览器只支持get/post，不支持delete/put，解决方法：浏览器将请求发送到过滤器，经由过滤器处理之后，再发送到后台
+ 	过滤器并不会拦截get/post请求，只会拦截满足条件的请求，条件：
+ 		1.标签隐藏，name属性为_method
+ 		<input type="hidden" name= "_method" value="delete/put">
+ 		2.请求方式为post，若为get，则放行
+ 		此时满足条件，查看value中的值，若为put，则将post请求转换成put请求，若为delete，则将post请求转换成delete请求
+ 		过滤器：HiddenHttpMethodFilter
+ 	 此外，可以发现，当映射名相同时@RequestMapping(value = "TestRest/{id}", method = RequestMethod.PUT)，可以通过method处理不同的请求
+
+ 	将delete/put请求转换为get/post请求的方式：
+ 		部分源码：
+	 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+				throws ServletException, IOException {
+
+			HttpServletRequest requestToUse = request;
+
+			if ("POST".equals(request.getMethod()) && request.getAttribute(WebUtils.ERROR_EXCEPTION_ATTRIBUTE) == null) {
+				String paramValue = request.getParameter(this.methodParam);
+				if (StringUtils.hasLength(paramValue)) {
+					String method = paramValue.toUpperCase(Locale.ENGLISH);
+					if (ALLOWED_METHODS.contains(method)) {
+						requestToUse = new HttpMethodRequestWrapper(request, method);
+					}
+				}
+			}
+
+			filterChain.doFilter(requestToUse, response);
+		}
+		原理：
+			原始请求为：request，改请求为默认只支持post/get，但是如果是“post”，并且有隐藏域<input type="hidden" name= "_method" value="delete/put">，则过滤器将原始的请求request加入新的请求方式delete，并将原始请求转为requestToUse请求（request + delete请求），最后将requestToUSe放入请求链中，后续再使用request时，实际就使用改造后的requestToUse
+
+从request中取值的方法：
+	@RequestParam(value = "password", required = false, defaultValue = "123")String password
+	等价于 String username = request.getParameter("username");
+	不使用@RequestParam注解也可以拿到request中的值，但参数名必须和name属性名一致，否则为null，无法将值传递过来
+	value = "password", request中取出的属性名
+	required = false, 是否必须传入该属性
+	defaultValue = "123", 不传入该属性时的默认值
+
+获取请求头信息 @RequestHeader
+	public String testRequestHeader(@RequestHeader("Accept-language") String message)
+
+通过mvc获取cookie值（JSESSIONID）
+	@CookieValue
+	服务端在接收客户端第一次请求时，会给该客户端分配一个session（该session包含一个sessionId），并且服务器端会在第一次响应客户端时，将该sessionId赋值给JSESSIONID（保存在cookie中），并传递给客户端
+
+ ant风格的请求路径：
+ 	？匹配单字符
+ 	*任意个字符（0到多个）
+ 	**任意目录
+
+
+SpringMVC处理各种参数的流程/逻辑：
+	请求：前端发请求a -> @RequestMapping(value = "a")
+	处理请求中的参数xyz：
+		@RequestMapping(value = "a")
+		public String test(@Xxx("xyz") String xyz)
+
+使用对象（实体类Student）接收请求参数
+
+在SpringMVC中使用原生态的Servlet API：Http Servlet
+	直接将Servlet-api中的类、接口写在mvc映射的方法中即可
+	public String testServletAPI(HttpServletRequest request, HttpServletResponse reponse)
+
+处理模型数据：
+	如果跳转时需要带数据：view，model则可以使用以下方式：
+		ModelAndView、ModelMap、Map、Model：数据放在request作用域中
+		@SessionAttributes（将数据加入session中）、@ModelAttribute
+
+		@RequestMapping(value="TestModelAndView")
+		public ModelAndView testModelAndView() { // ModelAndView：既有数据又有视图
+			// ModelAndView：Model -M  View：-V
+			ModelAndView view = new ModelAndView("success1"); 
+			Student student = new Student();
+			student.setId(1);
+			student.setName("zs");
+			student.setAge(20);
+			view.addObject("student1", student); // request.setAttribute();
+			return view;
+		}
+
+		@SessionAttributes：
+			@SessionAttributes(value="student4")：根据名字存入session中
+			@SessionAttributes(types=Student.class)：将所有Student类型的数据存入session中
+
+		@ModelAttribute
+			a.经常在更新时使用
+			b.在不改变原有代码的基础上，插入一个新方法
+
+			通过@ModelAttribute修饰的方法，会在每次请求前执行；
+			并且该方法的参数map.put()可以将对象放入即将查询的参数中；
+			必须满足的约定：
+				map.put(k, v)其中的k必须是即将的方法参数的首字母小写testModelAttribute(Student xxx)，即student；如果不一致，就需要通过@ModelAttribute来声明。如下：
+				@ModelAttribute //在任何一次情求前，都会先执行@ModelAttribute修饰的方法
+				public void queryStudentById(Map<String, Object> map) {
+					Student student = new Student();
+					student.setId(1);
+					student.setName("zs");
+					student.setAge(20);
+					
+			//		map.put("student", student); // 约定：map的key就是方法参数类型的首字母小写
+					map.put("stu", student);
+				}
+
+视图解析器：
+	视图顶级接口：View
+	视图解析器顶级接口：ViewResolver
+	常见的视图和解析器：
+		InternalResourceView、InternalResourceViewResolver（可以将字符串渲染成视图）、JstlView（可以解析JSTL实现国际化操作）
+		SpringMVC在解析JSP时，会默认使用InternalResourceView，如果发现JSP中包含了JSTL语言，则自动转为JstlView
+
+国际化：
+	a.创建资源文件
+		特定命名规则：基名(i18n/base)_语言_地区.properties
+	b.配置SpringMVC.xml，加载资源文件
+
+InternalResourceViewResolver其它功能：
+1.	<mvc:view-controller>
+	index.jsp -> Controller(@RequestMapping("")) -> success.jsp
+
+	要用SpringMVC实现：index.jsp -> success.jsp
+		<mvc:view-controller path="TestViewController" view-name="success"/>
+		以上注解，会让所有的请求转入<mvc:view-controller>中匹配映射地址，而会忽略@RequestMapping("")
+		如果想让其两者共存，则需要加注解<mvc:annotation-driven></mvc:annotation-driven>
+
+2.指定跳转方式： return "forward:/views/success.jsp";
+	forward:请求转发  redirect：重定向  需要注意，此种方式，不会被视图解析器加上前缀（/views）/后缀（.jsp）
+
+3.处理静态资源：html css js 图片 视频
+	在SpringMVC中，如果直接访问静态资源：404。原因：之前将所有的请求通过通配符"/"拦截，进而交给SpringMVC的入口DispatcherServlet去处理：找该请求映射对应的@RequestMapping
+
+	解决：如果是需要mvc处理的，则交给@RequestMapping()处理，如果不需要SpringMVC处理，则使用tomcat默认的servlet去处理：如果有对应的请求拦截，则交给相应的servlet去处理；如果没有对应的servlet，则直接访问。
+	tomcat默认的servlet位置？在tomcat配置文件\conf\web.xml中。
+
+	解决静态资源方案：如果有SpringMVC对应的@RequestMapping()，则交给SpringMVC处理；如果没有对应的@RequestMapping()，则交给服务器对应的servlet去处理。
+	实现方法：增加配置 <mvc:default-servlet-handler></mvc:default-servlet-handler> + <mvc:annotation-driven></mvc:annotation-driven>
+
+4.类型转换：
+	a.SpringMVC自带一些常见的类型转换器：
+		public String testDelete(@PathVariable("id")String id)，既可以接收int类型数据id，也可以接收String类型数据id
+
+	b.可以自定义类型转换器：
+		1.编写自定义类型转换器
+
+		<!-- 1.将自定义转换器纳入Spring IOC容器 -->
+		<bean id="myConverter" class="com.yaoyue.converter.MyConverter"></bean>
+
+		<!-- 2.将myConverter在纳入SpringMVC提供的转换器Bean -->
+		<bean id="conversionService" class="org.springframework.context.support.ConversionServiceFactoryBean">
+			<property name="converters">
+				<set>
+					<ref bean="myConverter" />
+				</set>
+			</property>
+		</bean>
+
+		<!-- 3.将conversionService注册到mvc:annotation-driven中 -->
+		<!-- 此配置是SpringMVC的基础配置，很多注解都需要通过该注解来协调 -->
+		<mvc:annotation-driven conversion-service="conversionService"></mvc:annotation-driven>
+
+5.数据格式化：
+	实现步骤：
+	a.配置：
+		<!-- 配置：对数据格式化注解所依赖的bean -->
+		<bean id="conversionService" class="org.springframework.format.support.FormattingConversionServiceFactoryBean"></bean>
+	b.通过注解使用
+
+
+数据校验：
+	JSR303（JDK自带）
+	Hibernate Validate
+	a.jar
+		hibernate-validate.jar
+		classmate.jar
+		jboss-logging.jar
+		validation-api.jar
+		hibernate-validator-annotation-processor.jar
+	b.配置
+		<mvc:annotation-driven></mvc:annotation-driven>
+		此时mvc:annotation-driven的作用，要实现Hibernate Validator/JSR303校验（或者其它校验），必须实现SpringMVC提供的一个接口：ValidatorFactory
+		LocalValidatorFactoryBean是ValidatorFactory的一个实现类
+		<mvc:annotation-driven></mvc:annotation-driven>会在SpringMVC容器中自动加载一个LocalValidatorFactoryBean，因此可以直接实现数据校验。
+
+	c.使用
+		在校验的Controller中，给校验的对象增加一个注解@Valid

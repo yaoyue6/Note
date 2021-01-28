@@ -1,0 +1,360 @@
+定义IOC容器的两种方式：
+	1.使用applicationContext.xml配置文件定义
+		ApplicationContext ac = new ClassPathXmlApplicationContext("app*.xml");
+	2.使用注解定义
+		通过@Configuration标签将普通类转化为配置类
+		存bean：@Bean + 方法返回值
+		取bean：和配置方式一样
+	两种形式获取的IOC容器是独立的
+
+	注解形式给在OC容器中存放bean：
+		1.必须有@Configuration注解（配置类）
+		2.形式：
+			三层组件：
+				a.给三层组件分别加注解@Controller、@Service、@Repository
+				b.将注解所在包纳入IOC容器中
+					纳入IOC扫描器：
+						①xml配置文件
+							<context:component-scan base-package="com.yaoyue"></context:component-scan>
+						②在配置类上加注解
+							@ComponentScan(value="com.yaoyue.dao")
+
+						给扫描器指定规则：
+							过滤类型：FilterType(ANNOTATION, ASSIGNABLE_TYPE, CUSTOM)
+							1.FilterType.ANNOTATION：按照注解
+							2.FilterType.ASSIGNABLE_TYPE：按照给定的类型
+							3.FilterType.ASPECTJ：使用ASPECTJ表达式指定
+							4.FilterType.REGEX：使用正则表达式指定
+							5.FilterType.CUSTOM：使用自定义规则
+
+							指定扫描的时候按照什么规则排除哪些组件：
+								excludeFilters = {@ComponentScan.Filter(type = FilterType.ANNOTATION, value = {Service.class, Repository.class})})
+								解释：
+									excludeFilters：排除扫描包（即com.yaoyue）中的符合要求的bean，type = FilterType.ANNOTATION：指定过滤类型为注解，value = {Service.class, Repository.class}：指定带@Service和@Repository标签的类
+							指定扫描的时候只需要包含哪些组件：
+								includeFilters = {@ComponentScan.Filter(type = FilterType.ANNOTATION, value = {Service.class, Repository.class})},useDefaultFilters = false)
+								解释：
+									includeFilters：包含扫描包（即com.yaoyue）中的符合要求的bean，useDefaultFilters = false：禁止默认行为（因为之前已经指定com.yaoyue为扫描包，但之后又加入包含过滤器，com.yaoyue范围更大，默认规则为符合要求，因此需要禁止）
+							只需要某个特定的类（只在三层架构中）：
+								type = FilterType.ASSIGNABLE_TYPE, value = {StudentServiceImpl.class}
+
+								区分：
+									ANNOTATION：Controller.class指的是所有标有Controller的类
+									ASSIGNABLE_TYPE：指的是具体的一个类StudentController.class
+
+			非三层组件：
+				@Bean + 方法返回值，id默认是方法名首字母小写，还可以进行修改
+
+IOC容器赋值：
+	如果是简单类型（8个基本类型+String），value；
+	如果是对象类型，ref="需要引用的id值"，因此实现了对象与对象之间的依赖关系。
+
+依赖注入的三种方式：
+1.set注入：
+	赋值：默认使用的是set方法；
+	依赖注入底层是通过反射实现的。
+
+2.构建器注入：
+	赋值：通过构造方法赋值
+	<constructor-arg value="zs" index="0" name="name" type="String"></constructor-arg>
+	需要注意：如果<constructor-arg>的顺序与构造方法参数的顺序不一致，则需要通过type或者index或者name来指定顺序。
+
+3.使用p命名空间引入
+
+注意：无论是String还是int/short/long，在赋值时都是value="值"，因此建议此种情况配合name/type进行区分
+
+
+注入各种集合类型：List Array Set Map properties
+
+value和<value>标签的区别：
+1.value使用时需要加""，<value>使用时不用加""
+2.value无type属性，<value>可以通过type指定数据类型
+3.处理特殊字符：value只能使用xml预定义的实体引用；<value>还可以使用<![CDATA[]]>标记
+
+使用""赋空值，使用<null/>赋null值
+在IOC总定义bean的前提：该bean的类必须提供无参构造方法
+
+自动装配（只适用于ref类型）：
+	约定优于配置
+	<bean id="c" class="com.yaoyue.entity.Course" autowire="byName">
+	autowired="byName|byType":
+		byName：Course类中有一个ref属性teacher(属性名)，并且IOC容器中恰好有一个bean的id值也是teacher
+			可以理解为byId，即bean的id值 = 属性名
+		byType：其它bean的类型（class）是否与该Course类的ref属性类型一致（注意：当前IOC容器中，只能有一个bean满足条件）
+		constructor：其它bean的类型是否和该Course类构造方法的ref属性类型一致，本质上就是byType
+	
+	可以在头文件中，一次性将该IOC容器中的所有bean统一设置成自动装配。
+	自动装配可以降低代码量，但会降低程序的可读性，使用时，需谨慎。
+
+使用注解定义bean：通过注解的形式将bean以及相应的属性值放入IOC容器中
+	<context:component-scan base-package="com.yaoyue.dao"></context:component-scan>
+	Spring在启动的时候，会根据base-package在该包中扫描所有类，查找这些类是否有注解@Component，如果有，则将其加入到IOC容器中
+
+	@Component细化：
+		dao层注解：@Repository
+		service层注解：@Service
+		controller层注解：@Controller
+	@Autowired：将IOC容器中类型相同的属性值注入到某个属性中，默认为byType方式，如果要改为byName方式，需要另外加@Qualifier("bean名称")
+
+使用注解实现事务（声明式事务）
+	目标：通过事务使以下方法要么全成功，要么全失败
+	public void StudentDaoImpl(){
+		crud...
+	}
+
+
+	事务：
+		事务具备ACID四种特性，ACID是Atomic（原子性）、Consistency（一致性）、Isolation（隔离性）和Durability（持久性）的英文缩写。
+		（1）原子性（Atomicity）
+		事务最基本的操作单元，要么全部成功，要么全部失败，不会结束在中间某个环节。事务在执行过程中发生错误，会被回滚到事务开始前的状态，就像这个事务从来没有执行过一样。
+		（2）一致性（Consistency）
+		事务的一致性指的是在一个事务执行之前和执行之后数据库都必须处于一致性状态。如果事务成功地完成，那么系统中所有变化将正确地应用，系统处于有效状态。如果在事务中出现错误，那么系统中的所有变化将自动地回滚，系统返回到原始状态。
+		（3）隔离性（Isolation）
+		指的是在并发环境中，当不同的事务同时操纵相同的数据时，每个事务都有各自的完整数据空间。由并发事务所做的修改必须与任何其他并发事务所做的修改隔离。事务查看数据更新时，数据所处的状态要么是另一事务修改它之前的状态，要么是另一事务修改它之后的状态，事务不会查看到中间状态的数据。
+		（4）持久性（Durability）
+		指的是只要事务成功结束，它对数据库所做的更新就必须永久保存下来。即使发生系统崩溃，重新启动数据库系统后，数据库还能恢复到事务成功结束时的状态。
+
+	事务几种实现方式
+		（1）编程式事务管理对基于 POJO 的应用来说是唯一选择。我们需要在代码中调用beginTransaction()、commit()、rollback()等事务管理相关的方法，这就是编程式事务管理。
+		（2）基于 TransactionProxyFactoryBean的声明式事务管理
+		（3）基于 @Transactional 的声明式事务管理
+		（4）基于Aspectj AOP配置事务
+
+	常用的事务传播机制如下：
+		1.PROPAGATION_REQUIRED：
+		Spring默认的传播机制，能满足绝大部分业务需求，如果外层有事务，则当前事务加入到外层事务，一块提交，一块回滚。如果外层没有事务，新建一个事务执行。
+
+		2.PROPAGATION_REQUES_NEW：
+		该事务传播机制是每次都会新开启一个事务，同时把外层事务挂起，当当前事务执行完毕，恢复上层事务的执行。如果外层没有事务，执行当前新开启的事务即可。
+
+		3.PROPAGATION_NOT_SUPPORT：
+		如果外层有事务，则加入外层事务，如果外层没有事务，则直接使用非事务方式执行。完全依赖外层的事务。
+
+		4.PROPAGATION_NOT_SUPPORT：
+		该传播机制不支持事务，如果外层存在事务则挂起，执行完当前代码，则恢复外层事务，无论是否异常都不会回滚当前的代码。
+		
+		5.PROPAGATION_NEVER：
+		该传播机制不支持外层事务，即如果外层有事务就抛出异常。
+
+		6.PROPAGATION_MANDATORY：
+		与NEVER相反，如果外层没有事务，则抛出异常。
+
+		7.PROPAGATION_NESTED：
+		该传播机制的特点是可以保存状态保存点，当前事务回滚到某一个点，从而避免所有的嵌套事务都回滚，即各自回滚各自的，如果子事务没有把异常吃掉，基本还是会引起全部回滚的。
+
+
+	事务的隔离级别：
+		事务的隔离级别定义一个事务可能受其他并发务活动活动影响的程度，可以把事务的隔离级别想象为这个事务对于事物处理数据的自私程度。
+
+		在一个典型的应用程序中，多个事务同时运行，经常会为了完成他们的工作而操作同一个数据。并发虽然是必需的，但是会导致以下问题：
+		1.脏读（Dirty read）
+		脏读发生在一个事务读取了被另一个事务改写但尚未提交的数据时。如果这些改变在稍后被回滚了，那么第一个事务读取的数据就会是无效的。
+		2.不可重复读（Nonrepeatable read）
+		不可重复读发生在一个事务执行相同的查询两次或两次以上，但每次查询结果都不相同时。这通常是由于另一个并发事务在两次查询之间更新了数据。
+		不可重复读重点在修改。
+		3.幻读（Phantom reads）
+		幻读和不可重复读相似。当一个事务（T1）读取几行记录后，另一个并发事务（T2）插入了一些记录时，幻读就发生了。在后来的查询中，第一个事务（T1）就会发现一些原来没有的额外记录。
+		幻读重点在新增或删除。
+		在理想状态下，事务之间将完全隔离，从而可以防止这些问题发生。然而，完全隔离会影响性能，因为隔离经常涉及到锁定在数据库中的记录（甚至有时是锁表）。完全隔离要求事务相互等待来完成工作，会阻碍并发。因此，可以根据业务场景选择不同的隔离级别。
+		
+		隔离级别：
+		1.ISOLATION_DEFAULT：使用后端数据库默认的隔离级别
+		2.ISOLATION_READ_UNCOMMITTED：允许读取尚未提交的更改。可能导致脏读、幻读或不可重复读。
+		3.ISOLATION_READ_COMMITTED：（Oracle默认级别）允许从已经提交的并发事务读取。可防止脏读，但幻读和不可重复读仍可能会发生。
+		4.ISOLATION_REPEATABLE_READ：（MYSQL默认级别）对相同字段的多次读取的结果是一致的，除非数据被当前事务本身改变。可防止脏读和不可重复读，但幻读仍可能发生。
+		5.ISOLATION_SERIALIZABLE：完全服从ACID的隔离级别，确保不发生脏读、不可重复读和幻影读。这在所有隔离级别中也是最慢的，因为它通常是通过完全锁定当前事务所涉及的数据表来完成的。
+		
+
+	只读：
+		如果一个事务只对数据库执行读操作，那么该数据库就可能利用那个事务的只读特性，采取某些优化措施。通过把一个事务声明为只读，可以给后端数据库一个机会来应用那些它认为合适的优化措施。由于只读的优化措施是在一个事务启动时由后端数据库实施的， 因此，只有对于那些具有可能启动一个新事务的传播行为（PROPAGATION_REQUIRES_NEW、PROPAGATION_REQUIRED、 ROPAGATION_NESTED）的方法来说，将事务声明为只读才有意义。
+		
+
+	事务超时：
+		为了使一个应用程序很好地执行，它的事务不能运行太长时间。因此，声明式事务的下一个特性就是它的超时。
+		假设事务的运行时间变得格外的长，由于事务可能涉及对数据库的锁定，所以长时间运行的事务会不必要地占用数据库资源。这时就可以声明一个事务在特定秒数后自动回滚，不必等它自己结束。
+		
+		由于超时时钟在一个事务启动的时候开始的，因此，只有对于那些具有可能启动一个新事务的传播行为（PROPAGATION_REQUIRES_NEW、PROPAGATION_REQUIRED、ROPAGATION_NESTED）的方法来说，声明事务超时才有意义。
+		
+		
+	回滚规则
+		在默认设置下，事务只在出现运行时异常（runtime exception）时回滚，而在出现受检查异常（checked exception）时不回滚（这一行为和EJB中的回滚行为是一致的）。
+		不过，可以声明在出现特定受检查异常时像运行时异常一样回滚。同样，也可以声明一个事务在出现特定的异常时不回滚，即使特定的异常是运行时异常。
+		
+
+	Spring声明式事务配置参考
+		事物配置中有哪些属性可以配置?以下只是简单的使用参考
+		事务的传播性：
+		@Transactional(propagation=Propagation.REQUIRED)
+		事务的隔离级别：
+		@Transactional(isolation = Isolation.READ_UNCOMMITTED)
+		读取未提交数据(会出现脏读, 不可重复读) 基本不使用
+		只读：
+		@Transactional(readOnly=true)
+		该属性用于设置当前事务是否为只读事务，设置为true表示只读，false则表示可读写，默认值为false。
+		事务的超时性：
+		@Transactional(timeout=30)
+		回滚：
+		指定单一异常类：@Transactional(rollbackFor=RuntimeException.class)
+		指定多个异常类：@Transactional(rollbackFor={RuntimeException.class, Exception.class})
+		该属性用于设置需要进行回滚的异常类数组，当方法中抛出指定异常数组中的异常时，则进行事务回滚。
+
+	参考博客：https://blog.csdn.net/chinacr07/article/details/78817449
+
+AOP：
+	面向切面编程
+
+	基本概念：
+		切面：
+
+
+	将一个普通的类 --> 有特殊功能的类    1.继承xx类   2.实现xx接口   3.注解（如@Test）
+
+	类 --> "通知"：实现接口
+	前置通知步骤：
+		1.jar包：aopaliance.jar、aspectjweaver.jar
+		2.配置
+		3.编写
+			aop：每当add()之前，自动执行一个方法log()
+				add()：业务方法（即SudentService.java中的addStudent方法）
+				log()：自动执行的通知，即aop前置通知
+	配置代码：
+		<bean id="logAfter" class="com.yaoyue.aop.LogAfter"></bean>
+		<aop:config>
+			<aop:pointcut expression="execution(* com.yaoyue.service..*.deleteEmployee(..))" id="pointcut"/>
+			<aop:advisor advice-ref="logAfter" pointcut-ref="pointcut" />
+		</aop:config>
+
+		execution表达式：* com.yaoyue.service..*.deleteEmployee(..)   *：表示任意返回值类型 com.yaoyue.service：表示包名 ..*：表示同包以及子包中的所有类  ..：表示参数类型及数量不定
+	
+	后置通知：
+		和前置通知步骤一样
+
+	异常通知：
+		根据异常接口的定义可以发现，异常通知的实现类必须编写以下方法：
+		void afterThrowing([Method, args, target], ThrowableSubclass);
+		a.public void afterThrowing(Method, args, target, ThrowableSubclass);
+		b.public void afterThrowing(ThrowableSubclass);
+
+	环绕通知：
+		在目标方法的前后、异常发生时、最终从各个方面都可以进行的通知，是最强大的通知。可以获取目标方法的全部控制权（目标方法是否执行、执行之前、执行之后，参数、返回值等）
+
+	环绕通知是通过拦截器实现的，先执行环绕通知实现的后置通知，再执行后置通知
+
+	开启注解对AOP的支持：
+		<aop:aspectj-autoproxy></aop:aspectj-autoproxy>
+	由于注解时，业务和通知放在了一起，因此不需要进行连接
+
+	注意：通过注解形式将对象增加到IOC容器中，需要设置扫描器
+	扫描器会将指定的包中的@Component @Service @Repository @Controller 修饰的类产生的对象增加到IOC容器中。
+
+	@Aspect 不需要加入扫描器，只需要开启注解对AOP的支持
+
+	通过注解形式实现的AOP，如果想获取目标对象的一些参数，则需要使用一个对象，JoinPoint
+
+	注解形式的返回值：
+		a.声明返回值的参数
+			@AfterReturning(pointcut = "execution(* com.yaoyue.service..*.addEmployee(..))", returning = "returnValue") // 单个可以直接写，但多个需要使用k-v结构
+			public void after(JoinPoint jp, Object returnValue) { // 前置通知没有返回值，后置通知有返回值，直接加Object returnValue即可，但需要告诉Spring容器
+				System.out.println("<基于注解形式的后置通知> 目标对象：" + jp.getTarget() + "， 方法名：" + jp.getSignature().getName() + "， 参数列表：" +  Arrays.toString(jp.getArgs()) + "， 返回值：" + returnValue);
+			}
+		注解形式实现aop时，通知方法的参数的不能多、少
+
+		环绕通知：
+			//	环绕通知   参数：ProceedingJoinPoint
+			@Around("execution(public * com.yaoyue.service..*.deleteEmployee(..))")
+			public void around(ProceedingJoinPoint jp) {
+				System.out.println("<基于环绕注解形式的前置通知>");
+				try {
+					jp.proceed();
+					System.out.println("<基于环绕注解形式的后置通知>");
+				} catch(Throwable e) {
+					System.out.println("<基于环绕注解形式的异常通知>");
+				} finally {
+					System.out.println("<基于环绕注解形式的最终通知>");
+				}
+			}
+
+			注意：环绕通知执行时可能会出错，即环绕通知执行之后返回引用数据类型，若切入点的方法返回值为基本数据类型，则会报错，解决方法，将切入点的方法改为包装类型
+
+		异常通知：
+			//	异常通知  如果只捕获特定类型的已知异常，可以通过第二个参数来实现
+			@AfterThrowing(pointcut = "execution(* com.yaoyue.service..*.updateEmployee(..))", throwing = "e")
+			public void throwable(JoinPoint jp, NullPointerException e) { // 此异常通知只能捕获特定异常及其子类异常
+				System.out.println("<基于注解形式的异常通知> 目标对象：" + jp.getTarget() + "， 方法名：" + jp.getSignature().getName() + "， 参数列表：" +  Arrays.toString(jp.getArgs()) + "， 异常类型" + e.getMessage());
+			}
+
+使用SpringIOC开发Web容器：
+	SpringIOC容器初始化： 1.将IOC容器中的所有bean实例为对象  new对象
+						 2.将bean依赖的属性值注入进去       属性赋值
+
+	web程序如何初始化Spring IOC容器？
+		启动Web项目时，将IOC容器初始化
+		监听器：监听tomcat是否启动，一旦启动，立刻实例化一个IOC容器对象  导入spring-web.jar
+		因此使用Spring开发web项目，至少需要7个jar包
+
+	<listener>
+  	<!-- 
+  		配置spring-web.jar提供的监听器，此监听器可以在服务器启动时初始化IOC容器
+  		初始化IOC容器（aplicationContext.xml）：
+  			1.告诉监听器此容器的位置：context-param
+  			2.默认约定的位置：WEB-INF/applicationContext.xml
+  	 -->
+  		<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+  	</listener>
+
+  	<context-param>
+	  	<!-- contextConfigLocation：该属性值保存着容器配置文件applicationContext.xml的位置 -->
+	  	<param-name>contextConfigLocation</param-name>
+	  	<param-value>classpath:applicationContext.xml</param-value>
+	</context-param>
+
+拆分Spring配置文件：
+	web项目：
+		根据什么拆分？ 
+			1.三层架构
+				UI（html/css/jsp、Servlet）：applicationContextController.xml
+				Service：applicationContextService.xml
+				Dao：applicationContextDao.xml
+				公共 数据库：applicationContextDB.xml
+			2.功能结构
+				学生相关配置：applicationContextStudent.xml
+				班级相关配置：applicationContextClass.xml
+		合并：如何将多个配置文件共同加载
+			1.直接将配置文件写到param-value
+				<param-value>
+	  				classpath:applicationContext.xml,
+	  				classpath:applicationContextDB.xml,
+	  				classpath:applicationContextDao.xml,
+	  				classpath:applicationContextService.xml
+	  			</param-value>
+	  			（可以使用classpath:applicationContext*.xml统一加载）
+
+  			2.使用import标签导入到合并applicationContext.xml中
+	  			<import resource="applicationContextDao.xml"/>
+				<import resource="applicationContextDB.xml"/>
+				<import resource="applicationContextService.xml"/>
+				（可以使用classpath:applicationContext*.xml统一加载）
+
+	Spring IOC容器和Servlet容器不一致，从前台发送的request请求，会传输给Servlet容器，此时通过Spring IOC容器进行DI的属性值并没有在Servlet容器内，因此Spring IOC容器和Servlet容器中需要进行连通，搭建沟通的桥梁
+
+	解决方法：在Servlet初始化时：
+		1.加载Xml文件：
+			普通Java项目：ApplicationContext ac = new ClassPathXmlApplicationContext("applicationContext.xml");
+			Web项目：ApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(this.getServletContext());
+			(Web项目获取Spring上下文对象context)
+		2.获取Spring IOC容器中的bean对象，并进行依赖注入
+
+
+组件注册：
+	@Scope：调整作用域
+		Spring IOC容器在对引用类型变量进行依赖注入时，默认是单实例的。可以通过添加@Scope注解修改，还可以通过在bean中添加scope属性来实现。
+		prototype：多实例的
+			IOC容器启动并不会调用方法创建对象放在容器中，每次获取的时候才会调用方法创建对象。
+		singleton：单实例的（默认）
+			IOC容器启动会调用方法创建对象方法IOC容器中，以后每次获取都是直接从容器中拿（map.get()）
+		request：每一次请求创建一个实例
+		session：每一个session创建一个实例
+
+	@Lazy：懒加载
+		单实例bean默认在容器启动的时候创建对象，以后每次获取就是从map中拿（map.get）；
+		懒加载：容器启动不创建对象，第一次使用（获取）bean创建对象，并初始化。
